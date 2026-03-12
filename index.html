@@ -159,7 +159,7 @@ const saveLocal = d => { try { localStorage.setItem(LOC_KEY, JSON.stringify(d));
 // ── UTILS ──────────────────────────────────────────────────────
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const calcAvg = gs => (!gs||!gs.length) ? null : gs.reduce((s,g)=>s+g.value,0)/gs.length;
-const gradeClass = v => v===null?'':v>=7?'grade-high':v>=6?'grade-mid':'grade-low';
+const gradeClass = v => v===null?'':v>=60?'grade-high':v>=50?'grade-mid':'grade-low';
 const fmtAvg = v => v===null?'—':v.toFixed(2);
 const fmtMin = m => { const h=Math.floor(m/60),min=m%60; return min>0?`${h}h ${min}m`:`${h}h`; };
 
@@ -447,7 +447,7 @@ function App() {
         )
       ),
       React.createElement('div',{className:'stats-row'},
-        React.createElement('div',{className:`stat-card ${overallAvg!==null?(overallAvg>=6?'accent':'danger'):''}`},
+        React.createElement('div',{className:`stat-card ${overallAvg!==null?(overallAvg>=50?'accent':'danger'):''}`},
           React.createElement('div',{className:'stat-label'},'Media Generale'),
           React.createElement('div',{className:'stat-value'},fmtAvg(overallAvg)),
           React.createElement('div',{className:'stat-sub'},'su tutti i moduli')
@@ -554,11 +554,11 @@ function App() {
           React.createElement('button',{className:'btn btn-primary',onClick:()=>{setGradeVal('');setGradeDesc('');setGradeDate(new Date().toISOString().slice(0,10));setModal('addGrade');}},'+ Voto')
         )
       ),
-      React.createElement('div',{className:'card',style:avg!==null?{borderColor:avg>=6?'rgba(109,184,138,0.3)':'rgba(224,92,92,0.3)'}:{}},
+      React.createElement('div',{className:'card',style:avg!==null?{borderColor:avg>=50?'rgba(109,184,138,0.3)':'rgba(224,92,92,0.3)'}:{}},
         React.createElement('div',{className:'card-title'},'Media del Modulo'),
         React.createElement('div',{className:'avg-display'},
-          React.createElement('span',{className:'big',style:{color:avg===null?'var(--text3)':avg>=7?'var(--success)':avg>=6?'var(--accent)':'var(--danger)'}},fmtAvg(avg)),
-          avg!==null&&React.createElement('span',{className:'small'},'/ 10')
+          React.createElement('span',{className:'big',style:{color:avg===null?'var(--text3)':avg>=60?'var(--success)':avg>=50?'var(--accent)':'var(--danger)'}},fmtAvg(avg)),
+          avg!==null&&React.createElement('span',{className:'small'},'/ 100')
         )
       ),
       React.createElement('div',{className:'card'},
