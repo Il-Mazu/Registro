@@ -141,7 +141,8 @@
 
 <script type="module">
 import { initializeApp, getApps, deleteApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, updateDoc, getDoc, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, signOut, onAuthStateChanged, initializeAuth } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import React from 'https://esm.sh/react@18.2.0';
 import ReactDOM from 'https://esm.sh/react-dom@18.2.0/client';
 
@@ -150,6 +151,7 @@ const { useState, useEffect, useRef, useMemo } = React;
 // ── PERSISTENCE ────────────────────────────────────────────────
 const CFG_KEY = 'reg_fb_cfg';
 const LOC_KEY = 'reg_local_v1';
+const AUTH_KEY = 'reg_auth_user';
 const loadCfg  = () => { try { const r=localStorage.getItem(CFG_KEY); return r?JSON.parse(r):null; } catch(e){ return null; } };
 const saveCfg  = c => localStorage.setItem(CFG_KEY, JSON.stringify(c));
 const clearCfg = () => localStorage.removeItem(CFG_KEY);
@@ -171,12 +173,130 @@ const I = {
   plus:  'M12 5v14M5 12h14',
   trash: 'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6',
   gear:  'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
+  user:  'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  mail:  'M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2zm0 4l8 5 8-5V6l-8 5-8-5v2z',
+  logOut: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
 };
 
 // ── TOAST ──────────────────────────────────────────────────────
 function Toast({msg,onDone}) {
   useEffect(()=>{const t=setTimeout(onDone,2500);return()=>clearTimeout(t);},[]);
   return React.createElement('div',{className:'toast'},msg);
+}
+
+// ── AUTH SCREEN ───────────────────────────────────────────────
+function AuthScreen({onAuthSuccess, showToast, authInstance}) {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function handleAuth() {
+    setError('');
+    if (!email.trim() || !password.trim()) {
+      setError('Compila tutti i campi.');
+      return;
+    }
+    
+    if (!isLogin && password !== confirmPassword) {
+      setError('Le password non coincidono.');
+      return;
+    }
+    
+    setBusy(true);
+    try {
+      if (!authInstance) {
+        setError('Errore: Firebase non è inizializzato. Configura prima Firebase.');
+        return;
+      }
+      
+      if (isLogin) {
+        await signInWithEmailAndPassword(authInstance, email.trim(), password);
+      } else {
+        const result = await createUserWithEmailAndPassword(authInstance, email.trim(), password);
+        await sendEmailVerification(result.user);
+        showToast('📧 Email di verifica inviata. Controlla la tua casella di posta.');
+      }
+      onAuthSuccess();
+    } catch(e) {
+      const errorMsg = e.message || '';
+      if (errorMsg.includes('configuration-not-found')) {
+        setError('⚠️ Autenticazione non configurata. Vai su Firebase Console → Build → Authentication → Email/Password e abilitala.');
+      } else {
+        setError('Errore: ' + (e.message || 'Riprova più tardi.'));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return React.createElement('div',{className:'setup-screen'},
+    React.createElement('div',{className:'setup-card'},
+      React.createElement('div',{className:'setup-logo'},'Registro'),
+      React.createElement('p',{className:'setup-desc'},
+        isLogin ? 'Accedi al tuo account per sincronizzare i dati.' : 'Crea un nuovo account per salvare i tuoi dati.'
+      ),
+
+      error && React.createElement('div',{className:'setup-error'},error),
+
+      React.createElement('div',{className:'setup-field'},
+        React.createElement('label',null,'Email'),
+        React.createElement('input',{
+          type:'email',
+          value:email,
+          onChange:e=>setEmail(e.target.value),
+          onKeyDown:e=>e.key==='Enter'&&handleAuth(),
+          placeholder:'tua@email.com',
+          autoFocus:true
+        })
+      ),
+      
+      React.createElement('div',{className:'setup-field'},
+        React.createElement('label',null,'Password'),
+        React.createElement('input',{
+          type:'password',
+          value:password,
+          onChange:e=>setPassword(e.target.value),
+          onKeyDown:e=>e.key==='Enter'&&handleAuth(),
+          placeholder:'Minimo 6 caratteri'
+        })
+      ),
+
+      !isLogin && React.createElement('div',{className:'setup-field'},
+        React.createElement('label',null,'Conferma Password'),
+        React.createElement('input',{
+          type:'password',
+          value:confirmPassword,
+          onChange:e=>setConfirmPassword(e.target.value),
+          onKeyDown:e=>e.key==='Enter'&&handleAuth(),
+          placeholder:'Ripeti la password'
+        })
+      ),
+
+      React.createElement('button',{
+        className:'btn btn-primary',
+        style:{width:'100%',marginTop:8},
+        onClick:handleAuth,
+        disabled:busy
+      },
+        busy ? React.createElement('span',null,React.createElement('span',{className:'spin'}),isLogin?'Accesso...':'Registrazione...') : 
+        (isLogin ? 'Accedi' : 'Registrati')
+      ),
+
+      React.createElement('div',{style:{marginTop:16,textAlign:'center'}},
+        React.createElement('span',{style:{fontSize:12,color:'var(--text3)'}},
+          isLogin ? 'Non hai un account? ' : 'Hai già un account? '
+        ),
+        React.createElement('button',{
+          className:'btn btn-ghost btn-sm',
+          onClick:()=>setIsLogin(!isLogin),
+          style:{fontSize:12}
+        }, isLogin ? 'Registrati' : 'Accedi')
+      )
+    )
+  );
 }
 
 // ── SETUP ──────────────────────────────────────────────────────
@@ -262,6 +382,10 @@ function SetupScreen({onSave,onSkip}) {
 function App() {
   const [cfg,        setCfg]        = useState(loadCfg);
   const [showSetup,  setShowSetup]  = useState(()=>!loadCfg());
+  const [showAuth,   setShowAuth]   = useState(false);
+  const [user,       setUser]       = useState(null);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [authInstance, setAuthInstance] = useState(null);
   const [db,         setDb]         = useState(null);
   const [dbStatus,   setDbStatus]   = useState('disconnected');
   const [data,       setData]       = useState(loadLocal);
@@ -287,6 +411,74 @@ function App() {
   // ── FIREBASE INIT ──────────────────────────────────────────
   function stopListeners() { unsubRef.current.forEach(fn=>fn()); unsubRef.current=[]; }
 
+  // Data migration function
+  async function migrateDataToUser(userId) {
+    if (!db || !userId) return;
+    
+    try {
+      // First try to get global data from Firestore
+      let modulesToMigrate = [];
+      let absencesToMigrate = [];
+      
+      try {
+        const modulesSnap = await getDocs(collection(db, 'modules'));
+        const absencesSnap = await getDocs(collection(db, 'absences'));
+        
+        modulesToMigrate = modulesSnap.docs.map(d => ({id: d.id, ...d.data()}));
+        absencesToMigrate = absencesSnap.docs.map(d => ({id: d.id, ...d.data()}));
+      } catch(firestoreError) {
+        console.log('Firestore global data not accessible, trying localStorage');
+      }
+      
+      // If no global data in Firestore, try localStorage
+      if (modulesToMigrate.length === 0 && absencesToMigrate.length === 0) {
+        const localData = loadLocal();
+        modulesToMigrate = localData.modules || [];
+        absencesToMigrate = localData.absences || [];
+      }
+      
+      if (modulesToMigrate.length === 0 && absencesToMigrate.length === 0) {
+        showToast('ℹ️ Nessun dato da migrare');
+        return;
+      }
+      
+      const userModulesRef = collection(db, `users/${userId}/modules`);
+      const userAbsencesRef = collection(db, `users/${userId}/absences`);
+      
+      let migratedModules = 0;
+      let migratedAbsences = 0;
+      
+      // Move modules to user collection
+      for (const moduleData of modulesToMigrate) {
+        await setDoc(doc(userModulesRef, moduleData.id), moduleData);
+        // Try to delete from global if it exists there
+        try {
+          await deleteDoc(doc(db, 'modules', moduleData.id));
+        } catch(e) {
+          // Ignore if global doesn't exist
+        }
+        migratedModules++;
+      }
+      
+      // Move absences to user collection
+      for (const absenceData of absencesToMigrate) {
+        await setDoc(doc(userAbsencesRef, absenceData.id), absenceData);
+        // Try to delete from global if it exists there
+        try {
+          await deleteDoc(doc(db, 'absences', absenceData.id));
+        } catch(e) {
+          // Ignore if global doesn't exist
+        }
+        migratedAbsences++;
+      }
+      
+      showToast(`✅ Dati migrati: ${migratedModules} moduli, ${migratedAbsences} assenze`);
+    } catch(e) {
+      console.error('Migration error:', e);
+      showToast('⚠️ Errore durante la migrazione dei dati: ' + e.message);
+    }
+  }
+
   function initFirebase(config) {
     stopListeners();
     setDbStatus('loading');
@@ -296,24 +488,73 @@ function App() {
       const firestore = getFirestore(app);
       setDb(firestore);
 
-      const u1 = onSnapshot(collection(firestore,'modules'),
-        snap => {
-          const modules = snap.docs.map(d=>({id:d.id,...d.data()}));
-          setData(prev=>{ const n={...prev,modules}; saveLocal(n); return n; });
-          setDbStatus('connected');
-        },
-        ()=>setDbStatus('disconnected')
-      );
-      const u2 = onSnapshot(collection(firestore,'absences'),
-        snap => {
-          const absences = snap.docs.map(d=>({id:d.id,...d.data()}));
-          setData(prev=>{ const n={...prev,absences}; saveLocal(n); return n; });
+      // Initialize auth with the app instance
+      const auth = getAuth(app);
+      setAuthInstance(auth);
+      
+      const authUnsub = onAuthStateChanged(auth, async (authUser) => {
+        setUser(authUser);
+        setEmailVerified(authUser?.emailVerified || false);
+        
+        if (authUser) {
+          // User is authenticated, set up user-specific listeners
+          const userModulesRef = collection(firestore, `users/${authUser.uid}/modules`);
+          const userAbsencesRef = collection(firestore, `users/${authUser.uid}/absences`);
+          
+          // Check if user has data, otherwise migrate from global
+          const modulesSnap = await getDocs(userModulesRef);
+          const absencesSnap = await getDocs(userAbsencesRef);
+          
+          if (modulesSnap.empty && absencesSnap.empty) {
+            // User has no data, try to migrate from global
+            await migrateDataToUser(authUser.uid);
+          }
+          
+          const u1 = onSnapshot(userModulesRef,
+            snap => {
+              const modules = snap.docs.map(d=>({id:d.id,...d.data()}));
+              setData(prev=>{ const n={...prev,modules}; saveLocal(n); return n; });
+              setDbStatus('connected');
+            },
+            ()=>setDbStatus('disconnected')
+          );
+          
+          const u2 = onSnapshot(userAbsencesRef,
+            snap => {
+              const absences = snap.docs.map(d=>({id:d.id,...d.data()}));
+              setData(prev=>{ const n={...prev,absences}; saveLocal(n); return n; });
+            }
+          );
+          
+          unsubRef.current = [u1, u2, authUnsub];
+        } else {
+          // No user, use global collections (for backward compatibility)
+          const u1 = onSnapshot(collection(firestore,'modules'),
+            snap => {
+              const modules = snap.docs.map(d=>({id:d.id,...d.data()}));
+              setData(prev=>{ const n={...prev,modules}; saveLocal(n); return n; });
+              setDbStatus('connected');
+            },
+            ()=>setDbStatus('disconnected')
+          );
+          const u2 = onSnapshot(collection(firestore,'absences'),
+            snap => {
+              const absences = snap.docs.map(d=>({id:d.id,...d.data()}));
+              setData(prev=>{ const n={...prev,absences}; saveLocal(n); return n; });
+            }
+          );
+          unsubRef.current = [u1, u2, authUnsub];
         }
-      );
-      unsubRef.current = [u1,u2];
+      });
+      
     } catch(e) {
       setDbStatus('disconnected');
-      showToast('Errore Firebase: '+e.message);
+      const errorMsg = e.message || '';
+      if (errorMsg.includes('configuration-not-found')) {
+        showToast('⚠️ Autenticazione non configurata. Vai su Firebase Console → Build → Authentication → Email/Password e abilitala.');
+      } else {
+        showToast('Errore Firebase: '+e.message);
+      }
     }
   }
 
@@ -327,11 +568,38 @@ function App() {
   const currentMod   = useMemo(()=>data.modules.find(m=>m.id===view),[data.modules,view]);
 
   // ── DB HELPERS ────────────────────────────────────────────
-  async function fsSet(coll,id,obj)      { if(db) await setDoc(doc(db,coll,id),obj); }
-  async function fsDel(coll,id)          { if(db) await deleteDoc(doc(db,coll,id)); }
-  async function fsUpd(coll,id,fields)   { if(db) await updateDoc(doc(db,coll,id),fields); }
+  function getUserPath(coll) {
+    return user ? `users/${user.uid}/${coll}` : coll;
+  }
+  
+  async function fsSet(coll,id,obj)      { if(db) await setDoc(doc(db,getUserPath(coll),id),obj); }
+  async function fsDel(coll,id)          { if(db) await deleteDoc(doc(db,getUserPath(coll),id)); }
+  async function fsUpd(coll,id,fields)   { if(db) await updateDoc(doc(db,getUserPath(coll),id),fields); }
 
   function localUpdate(updater) { setData(d=>{ const n=updater(d); saveLocal(n); return n; }); }
+
+  // ── AUTH ACTIONS ───────────────────────────────────────────
+  async function handleSignOut() {
+    try {
+      if (authInstance) await signOut(authInstance);
+      setUser(null);
+      setEmailVerified(false);
+      showToast('Disconnesso');
+    } catch(e) {
+      showToast('Errore disconnessione: ' + e.message);
+    }
+  }
+
+  async function resendVerification() {
+    if (user && !user.emailVerified) {
+      try {
+        await sendEmailVerification(user);
+        showToast('📧 Email di verifica inviata nuovamente');
+      } catch(e) {
+        showToast('Errore: ' + e.message);
+      }
+    }
+  }
 
   // ── ACTIONS ───────────────────────────────────────────────
   async function addModule() {
@@ -407,6 +675,26 @@ function App() {
         React.createElement('h1',null,'Registro'),
         React.createElement('span',null,'Anno scolastico 2024/25')
       ),
+      
+      // User section
+      user ? React.createElement('div',{style:{padding:'12px',borderBottom:'1px solid var(--border)'}},
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:8}},
+          React.createElement(Icon,{d:I.user,size:16}),
+          React.createElement('span',{style:{fontSize:12,color:'var(--text)',fontWeight:500}},user.email)
+        ),
+        !emailVerified && React.createElement('div',{style:{fontSize:10,color:'var(--danger)',marginBottom:4}},
+          '📧 Email non verificata',
+          React.createElement('button',{className:'btn btn-ghost btn-sm',style:{marginLeft:8,padding:'2px 6px'},onClick:resendVerification},'Invia di nuovo')
+        ),
+        React.createElement('button',{className:'btn btn-ghost btn-sm',style:{width:'100%'},onClick:handleSignOut},
+          React.createElement(Icon,{d:I.logOut,size:12}),'Disconnetti'
+        )
+      ) : React.createElement('div',{style:{padding:'12px',borderBottom:'1px solid var(--border)'}},
+        React.createElement('button',{className:'btn btn-primary',style:{width:'100%'},onClick:()=>setShowAuth(true)},
+          React.createElement(Icon,{d:I.user,size:12}),'Accedi o Registrati'
+        )
+      ),
+      
       React.createElement('nav',{className:'sidebar-nav'},
         React.createElement('div',{className:'nav-label'},'Generale'),
         React.createElement('button',{className:`nav-item ${view==='home'?'active':''}`,onClick:()=>setView('home')},
@@ -690,6 +978,11 @@ function App() {
   // ── RENDER ────────────────────────────────────────────────
   if (showSetup) return React.createElement(React.Fragment,null,
     React.createElement(SetupScreen,{onSave:handleSetupSave,onSkip:()=>setShowSetup(false)}),
+    toast&&React.createElement(Toast,{msg:toast,onDone:()=>setToast(null)})
+  );
+
+  if (showAuth) return React.createElement(React.Fragment,null,
+    React.createElement(AuthScreen,{onAuthSuccess:()=>setShowAuth(false), showToast:showToast, authInstance:authInstance}),
     toast&&React.createElement(Toast,{msg:toast,onDone:()=>setToast(null)})
   );
 
